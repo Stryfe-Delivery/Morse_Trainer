@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Morse Code Tree</title>
+<style>
+  :root {
+    --bg-color: #111;
+    --board-color: #1a1a1a;
+    --node-color: #d4c4a8;
+    --line-color: #d4c4a8;
+    --active-glow: #aaffaa;
+    --text-color: #111;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg-color);
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    overflow: hidden;
+  }
+  #board {
+    position: relative;
+    width: 95vw;
+    max-width: 1100px;
+    height: 95vh;
+    max-height: 1050px;
+    background: var(--board-color);
+    border: 4px solid #555;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8), inset 0 0 10px rgba(255,255,255,0.05);
+    overflow: hidden;
+  }
+  #tree-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #instruction {
+    position: absolute;
+    top: 12px;
+    width: 100%;
+    text-align: center;
+    color: #666;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  #banners {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100%;
+    height: 18%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(to top, var(--board-color) 75%, transparent);
+    padding-bottom: 10px;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #morse-banner {
+    font-size: clamp(20px, 4vw, 32px);
+    font-weight: bold;
+    color: var(--active-glow);
+    letter-spacing: 6px;
+    text-shadow: 0 0 10px rgba(170,255,170,0.5);
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #letter-banner {
+    font-size: clamp(14px, 2.5vw, 20px);
+    color: #555;
+    letter-spacing: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    width: 90%;
+    text-align: center;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-top: 1px solid #333;
+    padding-top: 8px;
+  }
+  .ticker-letter { transition: color 0.3s ease, text-shadow 0.3s ease; }
+  .ticker-letter.latest {
+    color: var(--node-color);
+    text-shadow: 0 0 8px rgba(212,196,168,0.5);
+    font-weight: bold;
+  }
+
+  /* SVG Styles */
+  .trace {
+    fill: none;
+    stroke: var(--line-color);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .trace-junction { fill: var(--line-color); }
+  .node-shape {
+    fill: var(--node-color);
+    transition: fill 0.15s ease;
+  }
+  .node-label {
+    fill: var(--text-color);
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .node-g.active .node-shape { fill: var(--active-glow); }
+  .node-g.active .node-label { fill: #000; }
+  .node-g.root .node-shape {
+    fill: transparent;
+    stroke: var(--node-color);
+    stroke-width: 3;
+  }
+  .node-g.root.active .node-shape {
+    fill: var(--active-glow);
+    stroke: var(--active-glow);
+  }
+</style>
+</head>
+<body>
+<div id="board">
+  <div id="instruction">Press SPACE or LEFT CLICK (Short = Dot, Long = Dash)</div>
+  <svg id="tree-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="banners">
+    <div id="morse-banner">_</div>
+    <div id="letter-banner"></div>
+  </div>
+</div>
+<script>
+// ============================================================
+// 1. TREE DATA STRUCTURE
+// ============================================================
+const morseTree = {
+  letter: '',
+  type: 'root',
+  dash: {
+    letter: 'T', type: 'rect',
+    dash: {
+      letter: 'M', type: 'rect',
+      dash: { letter: 'O', type: 'rect' },
+      dot: { 
+        letter: 'G', type: 'circle',
+        dash: { letter: 'Q', type: 'rect' },
+        dot: { letter: 'Z', type: 'circle' }
+      }
+    },
+    dot: {
+      letter: 'N', type: 'circle',
+      dash: {
+        letter: 'K', type: 'rect',
+        dash: { letter: 'Y', type: 'rect' },
+        dot: { letter: 'C', type: 'circle' }
+      },
+      dot: {
+        letter: 'D', type: 'circle',
+        dash: { letter: 'X', type: 'rect' },
+        dot: { letter: 'B', type: 'circle' }
+      }
+    }
+  },
+  dot: {
+    letter: 'E', type: 'circle',
+    dash: {
+      letter: 'A', type: 'rect',
+      dash: {
+        letter: 'W', type: 'rect',
+        dash: { letter: 'J', type: 'rect' },
+        dot: { letter: 'P', type: 'circle' }
+      },
+      dot: {
+        letter: 'R', type: 'circle',
+        dot: { letter: 'L', type: 'circle' }
+      }
+    },
+    dot: {
+      letter: 'I', type: 'circle',
+      dash: {
+        letter: 'U', type: 'rect',
+        dot: { letter: 'F', type: 'circle' }
+      },
+      dot: {
+        letter: 'S', type: 'circle',
+        dash: { letter: 'V', type: 'rect' }, // <-- FIXED: Changed from 'circle' to 'rect'
+        dot: { letter: 'H', type: 'circle' }
+      }
+    }
+  }
+};
+
+// ============================================================
+// 2. LAYOUT ENGINE
+// ============================================================
+let leafCounter = 0;
+let maxDepth = 0;
+let allNodes = [];
+
+function layout(node, depth, path) {
+  node.depth = depth;
+  node.path = path;
+  if (depth > maxDepth) maxDepth = depth;
+
+  const childXs = [];
+  if (node.dash) {
+    layout(node.dash, depth + 1, path + '-');
+    childXs.push(node.dash.x);
+  }
+  if (node.dot) {
+    layout(node.dot, depth + 1, path + '.');
+    childXs.push(node.dot.x);
+  }
+
+  if (childXs.length === 0) {
+    node.x = leafCounter++;
+  } else if (childXs.length === 1) {
+    node.x = childXs[0];
+  } else {
+    node.x = (childXs[0] + childXs[1]) / 2;
+  }
+}
+
+function collectNodes(node, arr) {
+  arr.push(node);
+  if (node.dash) collectNodes(node.dash, arr);
+  if (node.dot) collectNodes(node.dot, arr);
+}
+
+function findNodeByPath(path) {
+  let node = morseTree;
+  for (const ch of path) {
+    node = ch === '-' ? node.dash : node.dot;
+    if (!node) return null;
+  }
+  return node;
+}
+
+// ============================================================
+// 3. SVG HELPERS
+// ============================================================
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  if (attrs) {
+    for (const k in attrs) {
+      e.setAttribute(k, attrs[k]);
+    }
+  }
+  return e;
+}
+
+const board = document.getElementById('board');
+const svg = document.getElementById('tree-svg');
+const morseBanner = document.getElementById('morse-banner');
+const letterBanner = document.getElementById('letter-banner');
+
+// ============================================================
+// 4. RENDER
+// ============================================================
+function render() {
+  const rect = board.getBoundingClientRect();
+  let w = rect.width;
+  let h = rect.height;
+
+  if (w < 50) w = Math.min(window.innerWidth * 0.95, 1100);
+  if (h < 50) h = Math.min(window.innerHeight * 0.95, 1050);
+
+  leafCounter = 0;
+  maxDepth = 0;
+  layout(morseTree, 0, '');
+
+  allNodes = [];
+  collectNodes(morseTree, allNodes);
+
+  const maxLeaf = Math.max(1, leafCounter - 1);
+
+  const scale = Math.max(0.55, Math.min(1.15, w / 900));
+  const circleR   = 18 * scale;
+  const rectW     = 46 * scale;
+  const rectH     = 28 * scale;
+  const fontSize  = Math.round(15 * scale);
+  const junctionR = 3 * scale;
+  const rootR     = 8 * scale;
+
+  const xPad = Math.max(rectW, circleR * 2) / 2 + 40;
+  const treeWidth = w - 2 * xPad;
+  const topPad = Math.max(h * 0.14, 100);
+  const bottomPad = Math.max(h * 0.22, 180);
+  const treeHeight = h - topPad - bottomPad;
+
+  for (const node of allNodes) {
+    node.xPix = xPad + (node.x / maxLeaf) * treeWidth;
+    node.yPix = topPad + (maxDepth > 0 ? (node.depth / maxDepth) * treeHeight : 0);
+  }
+
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  function drawTraces(node) {
+    if (node.dash) {
+      const midY = (node.yPix + node.dash.yPix) / 2;
+      const d = `M ${node.xPix} ${node.yPix} L ${node.xPix} ${midY} L ${node.dash.xPix} ${midY} L ${node.dash.xPix} ${node.dash.yPix}`;
+      svg.appendChild(el('path', { d, class: 'trace' }));
+      drawTraces(node.dash);
+    }
+    if (node.dot) {
+      const midY = (node.yPix + node.dot.yPix) / 2;
+      const d = `M ${node.xPix} ${node.yPix} L ${node.xPix} ${midY} L ${node.dot.xPix} ${midY} L ${node.dot.xPix} ${node.dot.yPix}`;
+      svg.appendChild(el('path', { d, class: 'trace' }));
+      drawTraces(node.dot);
+    }
+    if (node.dash && node.dot) {
+      const midY = (node.yPix + node.dash.yPix) / 2;
+      svg.appendChild(el('circle', {
+        class: 'trace-junction',
+        cx: node.xPix,
+        cy: midY,
+        r: junctionR
+      }));
+    }
+  }
+  drawTraces(morseTree);
+
+  const rootY = morseTree.yPix;
+  const antennaBaseY = rootY - rootR - 6;
+  const antennaTopY  = antennaBaseY - 28 * scale;
+  const antennaHalfW = 14 * scale;
+  svg.appendChild(el('path', {
+    class: 'trace',
+    d: `M ${morseTree.xPix} ${antennaBaseY} L ${morseTree.xPix} ${antennaTopY}`
+  }));
+  svg.appendChild(el('path', {
+    class: 'trace',
+    d: `M ${morseTree.xPix - antennaHalfW} ${antennaTopY} L ${morseTree.xPix + antennaHalfW} ${antennaTopY}`
+  }));
+  svg.appendChild(el('path', {
+    class: 'trace',
+    d: `M ${morseTree.xPix - antennaHalfW} ${antennaTopY} L ${morseTree.xPix} ${antennaTopY - 12 * scale} L ${morseTree.xPix + antennaHalfW} ${antennaTopY}`
+  }));
+
+  for (const node of allNodes) {
+    const isRoot = node.type === 'root';
+    const g = el('g', {
+      class: `node-g${isRoot ? ' root' : ''}`,
+      'data-path': node.path
+    });
+
+    if (isRoot) {
+      g.appendChild(el('circle', {
+        class: 'node-shape',
+        cx: node.xPix,
+        cy: node.yPix,
+        r: rootR
+      }));
+    } else if (node.type === 'circle') {
+      g.appendChild(el('circle', {
+        class: 'node-shape',
+        cx: node.xPix,
+        cy: node.yPix,
+        r: circleR
+      }));
+    } else {
+      g.appendChild(el('rect', {
+        class: 'node-shape',
+        x: (node.xPix - rectW / 2).toFixed(2),
+        y: (node.yPix - rectH / 2).toFixed(2),
+        width: rectW.toFixed(2),
+        height: rectH.toFixed(2),
+        rx: 4
+      }));
+    }
+
+    if (node.letter) {
+      const text = el('text', {
+        class: 'node-label',
+        x: node.xPix,
+        y: node.yPix,
+        'font-size': fontSize
+      });
+      text.textContent = node.letter;
+      g.appendChild(text);
+    }
+
+    svg.appendChild(g);
+  }
+
+  updateActive();
+}
+
+// ============================================================
+// 5. STATE & INPUT
+// ============================================================
+let currentPath = '';
+let letterHistory = [];
+let isPressing = false;
+let pressStartTime = 0;
+let letterTimeout = null;
+const DASH_THRESHOLD = 250;
+const LETTER_TIMEOUT = 1000;
+
+function updateActive() {
+  const gs = svg.querySelectorAll('.node-g');
+  for (let i = 0; i < gs.length; i++) gs[i].classList.remove('active');
+
+  const selector = currentPath === ''
+    ? '.node-g.root'
+    : `.node-g[data-path="${currentPath}"]`;
+
+  const target = svg.querySelector(selector);
+  if (target) target.classList.add('active');
+
+  morseBanner.textContent = currentPath === '' ? '_' : currentPath;
+}
+
+function updateTickerTape() {
+  letterBanner.innerHTML = '';
+  for (let i = 0; i < letterHistory.length; i++) {
+    const span = document.createElement('span');
+    span.className = 'ticker-letter';
+    if (i === letterHistory.length - 1) span.classList.add('latest');
+    span.textContent = letterHistory[i];
+    letterBanner.appendChild(span);
+  }
+}
+
+function startPress() {
+  if (isPressing) return;
+  isPressing = true;
+  pressStartTime = Date.now();
+  if (letterTimeout) {
+    clearTimeout(letterTimeout);
+    letterTimeout = null;
+  }
+}
+
+function endPress() {
+  if (!isPressing) return;
+  isPressing = false;
+
+  const duration = Date.now() - pressStartTime;
+  const isDash = duration >= DASH_THRESHOLD;
+  const candidate = currentPath + (isDash ? '-' : '.');
+
+  const node = findNodeByPath(candidate);
+  if (!node) return;
+
+  currentPath = candidate;
+  updateActive();
+
+  if (letterTimeout) clearTimeout(letterTimeout);
+  letterTimeout = setTimeout(commitLetter, LETTER_TIMEOUT);
+}
+
+function commitLetter() {
+  if (currentPath === '') return;
+  const node = findNodeByPath(currentPath);
+  if (node && node.letter) {
+    letterHistory.push(node.letter);
+    if (letterHistory.length > 16) letterHistory.shift();
+    updateTickerTape();
+  }
+  currentPath = '';
+  updateActive();
+}
+
+// ============================================================
+// 6. EVENTS
+// ============================================================
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); startPress(); }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); endPress(); }
+});
+window.addEventListener('mousedown', (e) => {
+  if (e.button === 0) startPress();
+});
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 0) endPress();
+});
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 100);
+});
+
+// ============================================================
+// 7. INIT
+// ============================================================
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', render);
+} else {
+  render();
+}
+window.addEventListener('load', render);
+</script>
+</body>
+</html>
